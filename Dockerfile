@@ -15,10 +15,15 @@ WORKDIR /app
 RUN useradd --system --no-create-home --uid 10001 eljefe
 
 COPY requirements.txt .
+# pip is uninstalled after the install step: it's pure build tooling, the
+# running app never imports it, and pip bundles its own internal vendored
+# copies of urllib3/msgpack (at whatever version pip itself shipped with)
+# which a container scanner correctly flags as present in the image even
+# though this app never calls them. Removing pip removes that noise along
+# with the tool itself.
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt && \
-    echo "=== DIAGNOSTIC: locating stale package files ===" && \
-    find / -xdev -iname "*msgpack*" -o -iname "*urllib3*" -o -iname "*setuptools*" 2>/dev/null | grep -v "^/proc" || true
+    pip uninstall --yes --no-input pip
 
 COPY app/ ./app/
 
