@@ -1,4 +1,4 @@
-from tests.conftest import auth_event
+from tests.conftest import DECISION_KEY, auth_event
 
 
 def _create_high_risk_incident(client) -> str:
@@ -34,10 +34,21 @@ def _create_high_risk_incident(client) -> str:
 
 def test_decision_requires_api_key(client):
     incident_id = _create_high_risk_incident(client)
-    client.headers.pop("X-API-Key")
     response = client.post(
         f"/incidents/{incident_id}/decision",
         json={"approved": True, "decided_by": "soc-analyst", "response_action": "disable_account"},
+    )
+    assert response.status_code == 401
+
+
+def test_ingest_key_alone_cannot_approve_a_decision(client):
+    """The whole point of scoped keys: a pipeline that can submit events
+    must not also be able to approve containment actions."""
+    incident_id = _create_high_risk_incident(client)
+    response = client.post(
+        f"/incidents/{incident_id}/decision",
+        json={"approved": True, "decided_by": "soc-analyst", "response_action": "disable_account"},
+        headers={"X-API-Key": client.headers["X-API-Key"]},
     )
     assert response.status_code == 401
 
@@ -47,6 +58,7 @@ def test_approved_decision_produces_simulated_outcome(client):
     response = client.post(
         f"/incidents/{incident_id}/decision",
         json={"approved": True, "decided_by": "soc-analyst", "response_action": "disable_account"},
+        headers={"X-API-Key": DECISION_KEY},
     )
     assert response.status_code == 200
     body = response.json()
@@ -64,6 +76,7 @@ def test_disapproved_decision_takes_no_action(client):
     response = client.post(
         f"/incidents/{incident_id}/decision",
         json={"approved": False, "decided_by": "soc-analyst", "response_action": "block_ip"},
+        headers={"X-API-Key": DECISION_KEY},
     )
     assert response.status_code == 200
     body = response.json()
@@ -74,5 +87,6 @@ def test_decision_on_unknown_incident_returns_404(client):
     response = client.post(
         "/incidents/does-not-exist/decision",
         json={"approved": True, "decided_by": "soc-analyst", "response_action": "block_ip"},
+        headers={"X-API-Key": DECISION_KEY},
     )
     assert response.status_code == 404

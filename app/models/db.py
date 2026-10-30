@@ -44,6 +44,17 @@ CREATE TABLE IF NOT EXISTS incidents (
     decided_at TEXT,
     FOREIGN KEY (event_id) REFERENCES events(event_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_incidents_created_at ON incidents(created_at);
+
+-- Lets a caller (e.g. Activepieces retrying a failed HTTP call) replay the
+-- exact same POST /events request safely: the second delivery returns the
+-- first response verbatim instead of being scored and stored again.
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+    idempotency_key TEXT PRIMARY KEY,
+    response_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -51,6 +62,13 @@ def get_raw_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(settings.db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # WAL lets a reader (GET /incidents) proceed without blocking on a
+    # writer, and the busy_timeout avoids an immediate "database is locked"
+    # error under brief write contention from concurrent webhook deliveries.
+    # Note: WAL needs real file-locking support — skip it for a DB path on
+    # a network or cloud-sync filesystem, where it can misbehave.
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 5000")
     return conn
 
 

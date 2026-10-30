@@ -9,13 +9,16 @@ Identity based attacks like credential compromise, brute force, password sprayin
 ## What's implemented vs. planned
 
 **Implemented and tested:**
-- Event ingestion with strict schema validation, API key auth, and rate limiting
+- Event ingestion with strict schema validation, scoped API key auth (a separate credential for submitting events vs. approving a decision), and rate limiting on every endpoint
 - Six deterministic detection rules, each with a documented correlation window and documented limitations
-- AbuseIPDB and VirusTotal clients with local SQLite caching and graceful degradation on error or rate limiting
+- AbuseIPDB and VirusTotal clients with local SQLite caching, retry with backoff on transient failures, and graceful degradation when retries are exhausted or the key is missing
 - Configurable risk scoring with MITRE ATT&CK technique mapping and finding deduplication
-- A SQLite backed incident store with a full audit trail
+- Cross-incident correlation context (how many prior HIGH/CRITICAL incidents this account or IP has had recently), surfaced as read-only context, not folded into the score
+- Idempotency-key support on event ingestion, so a retried delivery (e.g. from Activepieces) replays the original response instead of being scored twice
+- Structured JSON logging to stdout, no new dependency
+- A SQLite backed incident store with a full audit trail, running in WAL mode so reads don't block on writes
 - Simulation only response actions, so no real containment is ever possible from this code path
-- 38 automated tests (pytest) covering every rule, the scoring boundaries, the API, and the end to end scenarios described under [Testing](#testing)
+- 45 automated tests (pytest) covering every rule, the scoring boundaries, the API, retry/idempotency/correlation behavior, and the end to end scenarios described under [Testing](#testing)
 
 **Documented but not provisioned:** the Activepieces flow itself. Building it live needs your own Activepieces workspace, a Telegram bot token, and a reachable backend URL. See [`activepieces/workflow-documentation/el-jefe-flow.md`](activepieces/workflow-documentation/el-jefe-flow.md) for the exact piece and action names (verified against the live Activepieces catalog) and the setup steps.
 
@@ -81,7 +84,8 @@ See [`.env.example`](.env.example) for every variable. The essentials:
 
 | Variable | Purpose |
 |---|---|
-| `ELJEFE_API_KEY` | Required in the `X-API-Key` header on every request |
+| `ELJEFE_INGEST_API_KEY` | Required in the `X-API-Key` header on `POST /events` and `GET /incidents/{id}` |
+| `ELJEFE_DECISION_API_KEY` | Required in the `X-API-Key` header on `POST /incidents/{id}/decision` only. Deliberately a different value from the ingest key |
 | `ELJEFE_DB_PATH` | SQLite file path (created automatically) |
 | `ABUSEIPDB_API_KEY` | Optional. Without it, IP reputation checks are skipped, not failed |
 | `VIRUSTOTAL_API_KEY` | Optional. Without it, domain checks are skipped |
@@ -89,21 +93,24 @@ See [`.env.example`](.env.example) for every variable. The essentials:
 | `ELJEFE_FAILED_LOGIN_THRESHOLD` | Failures before `repeated_failed_logins` fires (default 5) |
 | `ELJEFE_SPRAY_DISTINCT_ACCOUNTS_THRESHOLD` | Distinct accounts from one IP before `password_spray` fires (default 4) |
 | `ELJEFE_ABUSEIPDB_SCORE_THRESHOLD` | AbuseIPDB confidence score before `malicious_ip_reputation` fires (default 50) |
+| `ELJEFE_INCIDENT_CORRELATION_LOOKBACK_DAYS` | How far back the cross-incident correlation context looks (default 30) |
+| `ELJEFE_INTEL_MAX_RETRIES` / `ELJEFE_INTEL_RETRY_BACKOFF_SECONDS` | Retry behavior for AbuseIPDB/VirusTotal on connection errors and 429/5xx (default 2 retries, 0.5s base backoff) |
+| `ELJEFE_LOG_LEVEL` | Python logging level for the JSON logs on stdout (default INFO) |
 
 No secret is ever logged. API keys are read only from the environment (see `app/config.py`) and are never written to the SQLite database.
 
 ## API documentation
 
 ### `POST /events`
-Headers: `X-API-Key: <key>`. Body: an authentication event (see `app/models/schemas.py:AuthEvent` or `sample_events/`). Unknown fields are rejected (`extra="forbid"`), and so is any field with the wrong type or a malformed IP; all of those return `422`. Re-submitting the same `event_id` returns `409`.
+Headers: `X-API-Key: <ingest key>`, optionally `Idempotency-Key: <any string>`. Body: an authentication event (see `app/models/schemas.py:AuthEvent` or `sample_events/`). Unknown fields are rejected (`extra="forbid"`), and so is any field with the wrong type or a malformed IP; all of those return `422`. Re-submitting the same `event_id` returns `409`. Re-submitting the same `Idempotency-Key` instead returns the first response verbatim, without re-scoring or re-storing anything — use this when retrying a delivery that may have already succeeded.
 
-Response: `{event_id, incident_id, findings[], intel[], risk_score, risk_band}`. `incident_id` is `null` unless the band is `HIGH` or `CRITICAL`.
+Response: `{event_id, incident_id, findings[], intel[], risk_score, risk_band, correlation}`. `incident_id` is `null` unless the band is `HIGH` or `CRITICAL`. `correlation` reports how many prior HIGH/CRITICAL incidents this username or source IP has had within the lookback window — informational only, it does not affect `risk_score`.
 
 ### `GET /incidents/{incident_id}`
-Returns the stored incident: the original event, findings, threat intel results, score and band, and, once it's been decided, who decided it, what was approved, and the simulated outcome. Returns `404` if the incident doesn't exist or was never created because its band was LOW or MEDIUM.
+Headers: `X-API-Key: <ingest key>`. Returns the stored incident: the original event, findings, threat intel results, score and band, and, once it's been decided, who decided it, what was approved, and the simulated outcome. Returns `404` if the incident doesn't exist or was never created because its band was LOW or MEDIUM.
 
 ### `POST /incidents/{incident_id}/decision`
-Body: `{approved: bool, decided_by: str, response_action: str, notes?: str}`. `response_action` is one of `revoke_sessions`, `disable_account`, `block_ip`, or `request_password_reset`. See [Security limitations](#security-limitations) for why none of these actually do anything real. The endpoint returns the simulated outcome and records it to the audit trail.
+Headers: `X-API-Key: <decision key>` — the ingest key will not work here, on purpose; see [Security limitations](#security-limitations). Body: `{approved: bool, decided_by: str, response_action: str, notes?: str}`. `response_action` is one of `revoke_sessions`, `disable_account`, `block_ip`, or `request_password_reset`, and none of these actually do anything real. The endpoint returns the simulated outcome and records it to the audit trail.
 
 ## Detection methodology
 
@@ -141,12 +148,13 @@ See [`activepieces/workflow-documentation/el-jefe-flow.md`](activepieces/workflo
 pytest -q
 ```
 
-There are 38 tests across:
+There are 45 tests across:
 - `tests/test_detection_rules.py`: each rule tested in isolation, both fire and no fire cases
 - `tests/test_risk_scoring.py`: deduplication and the band boundaries
 - `tests/test_events_endpoint.py`: auth, validation, duplicates, and the full pipeline
-- `tests/test_decision_endpoint.py`: the approval and disapproval paths
+- `tests/test_decision_endpoint.py`: the approval and disapproval paths, and that the ingest key specifically cannot approve a decision
 - `tests/test_scenarios.py`: the full scenario list from the project brief, including a mocked AbuseIPDB response and a mocked AbuseIPDB outage, to prove ingestion degrades gracefully instead of failing
+- `tests/test_v2_hardening.py`: idempotency-key replay, cross-incident correlation counts, and AbuseIPDB retry-then-succeed / retry-then-degrade behavior
 
 ## Example incident report
 
@@ -176,8 +184,12 @@ There are 38 tests across:
 - **Threat intel enrichment degrades silently on failure.** A down or rate limited AbuseIPDB or VirusTotal call is treated as unknown, not as malicious or clean. Ingestion never blocks on a third party outage, but that also means a real outage could mask a real signal.
 - **Geographic anomaly detection is just a label comparison**, not an actual distance and time feasibility calculation for impossible travel.
 - **The privileged role list is static** (`admin`, `root`, `superuser`, and a few others), so it won't recognize a custom role name from a provider that doesn't use one of those.
-- **Correlation happens per window, not cumulatively.** A slow attack spread across more time than `ELJEFE_CORRELATION_WINDOW_MINUTES` won't accumulate into a higher score.
+- **Detection-rule correlation happens per window, not cumulatively.** A slow attack spread across more time than `ELJEFE_CORRELATION_WINDOW_MINUTES` won't accumulate into a higher score. The separate cross-incident `correlation` field (prior HIGH/CRITICAL incidents for this user/IP) is informational only and deliberately does not feed back into the score yet — see `app/risk/correlation.py` for why.
+- **Retries are bounded, not a queue.** AbuseIPDB/VirusTotal calls retry a fixed number of times with backoff (`ELJEFE_INTEL_MAX_RETRIES`), then degrade to "unknown" like before. There's no durable retry queue, so an outage longer than the retry window still loses that signal for that event.
+- **The idempotency cache has no expiry or cleanup.** `idempotency_keys` grows without bound. Fine for a portfolio demo; a long-running deployment would want a TTL or periodic prune.
+- **WAL mode needs real file locking.** It's enabled unconditionally in `app/models/db.py`; if `ELJEFE_DB_PATH` ever points at a network or cloud-sync filesystem, WAL can misbehave there, and journal mode would need to be made configurable.
 - **There's no authentication provider integration.** Events are accepted exactly as they're posted. This project intentionally doesn't include a connector to any real identity provider, per the project brief's instruction to avoid introducing technologies without a clear purpose.
+- **Scoped API keys are two static env vars, not full RBAC.** This was a deliberate scope cut: a single-operator detection pipeline doesn't need user accounts and permission roles, it needs the ingestion credential and the approval credential to not be the same secret. See the assessment history for the fuller reasoning if you want to revisit it.
 
 ## Future improvements
 
@@ -186,3 +198,6 @@ There are 38 tests across:
 - An allowlist for known shared egress IPs to cut down on spray and geo false positives
 - A webhook signature verification example wired into the `sample_events/` replay tooling
 - A second notification channel (email) alongside Telegram, using Activepieces' existing email pieces
+- Threat-intel confidence weighting (discount a reputation score backed by very few reports)
+- A scheduled Activepieces trigger that re-checks IP reputation for still-open incidents, plus the `GET /incidents?status=open` endpoint it would need
+- Provisioning the real Activepieces flow (webhook → HTTP → backend → Telegram approval → decision callback) against this hardened backend, replacing the router-only demo flow used to verify orchestration

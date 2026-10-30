@@ -68,6 +68,12 @@ class RiskBand(str, Enum):
     CRITICAL = "CRITICAL"
 
 
+class CorrelationContext(BaseModel):
+    lookback_days: int
+    prior_high_critical_incidents_same_user: int
+    prior_high_critical_incidents_same_ip: int
+
+
 class EventIngestResponse(BaseModel):
     event_id: str
     incident_id: Optional[str]
@@ -75,6 +81,7 @@ class EventIngestResponse(BaseModel):
     intel: list[IntelResult]
     risk_score: int
     risk_band: RiskBand
+    correlation: CorrelationContext
 
 
 class DecisionRequest(BaseModel):

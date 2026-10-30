@@ -1,18 +1,19 @@
 import importlib
-import os
 import uuid
 
 import pytest
 from fastapi.testclient import TestClient
 
-API_KEY = "test-api-key"
+INGEST_KEY = "test-ingest-key"
+DECISION_KEY = "test-decision-key"
 
 
 @pytest.fixture
 def make_client(tmp_path, monkeypatch):
     def _make(**extra_env):
         db_path = tmp_path / f"eljefe-{uuid.uuid4().hex}.db"
-        monkeypatch.setenv("ELJEFE_API_KEY", API_KEY)
+        monkeypatch.setenv("ELJEFE_INGEST_API_KEY", INGEST_KEY)
+        monkeypatch.setenv("ELJEFE_DECISION_API_KEY", DECISION_KEY)
         monkeypatch.setenv("ELJEFE_DB_PATH", str(db_path))
         monkeypatch.setenv("ABUSEIPDB_API_KEY", "")
         monkeypatch.setenv("VIRUSTOTAL_API_KEY", "")
@@ -32,7 +33,7 @@ def make_client(tmp_path, monkeypatch):
         importlib.reload(main_module)
 
         test_client = TestClient(main_module.app)
-        test_client.headers.update({"X-API-Key": API_KEY})
+        test_client.headers.update({"X-API-Key": INGEST_KEY})
         return test_client
 
     return _make
