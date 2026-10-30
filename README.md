@@ -1,42 +1,23 @@
 # SENTINEL
 
-Automated identity threat detection and response — a FastAPI detection/
-risk-scoring engine orchestrated by an Activepieces flow with a
-human-approval gate, built as a cybersecurity engineering portfolio
-project.
+SENTINEL is an automated identity threat detection and response system. A FastAPI backend handles detection and risk scoring, and an Activepieces flow orchestrates notifications and a human approval gate on top of it. I built it as a cybersecurity engineering portfolio project.
 
 ## The problem
 
-Identity-based attacks — credential compromise, brute force, password
-spraying, account takeover, privileged-account abuse — produce a stream
-of authentication events that security teams still largely triage by
-hand: pull the IP's reputation, check whether the account is privileged,
-decide whether this is the fifth mistyped password of the day or an
-active intrusion, then decide what to do about it. In 2026, with
-credential-based attacks still the dominant initial-access vector and
-identity providers logging more authentication events than any analyst
-can read individually, the bottleneck isn't detection signal — it's
-triage and consistent, auditable decision-making. SENTINEL automates the
-enrichment and scoring step and keeps a human in the loop for the
-decision that actually matters: whether to act.
+Identity based attacks like credential compromise, brute force, password spraying, account takeover, and privileged account abuse all show up as a stream of authentication events that security teams mostly have to triage by hand. Someone pulls the IP's reputation, checks whether the account is privileged, and has to decide whether this is just the fifth mistyped password of the day or an actual intrusion, then decides what to do about it. Heading into 2026, credential based attacks are still the dominant way attackers get initial access, and identity providers log far more authentication events than any analyst could read individually. The bottleneck isn't a lack of detection signal, it's triage and making consistent, auditable decisions quickly. SENTINEL automates the enrichment and scoring step and keeps a human in the loop for the decision that actually matters: whether to act.
 
 ## What's implemented vs. planned
 
 **Implemented and tested:**
-- Event ingestion with strict schema validation, API-key auth, rate limiting
-- Six deterministic detection rules with a documented correlation window and documented limitations per rule
-- AbuseIPDB and VirusTotal clients with local SQLite caching and graceful degradation on error/rate-limit
+- Event ingestion with strict schema validation, API key auth, and rate limiting
+- Six deterministic detection rules, each with a documented correlation window and documented limitations
+- AbuseIPDB and VirusTotal clients with local SQLite caching and graceful degradation on error or rate limiting
 - Configurable risk scoring with MITRE ATT&CK technique mapping and finding deduplication
-- SQLite-backed incident store with a full audit trail
-- Simulation-only response actions — no real containment is ever possible from this code path
-- 38 automated tests (pytest) covering every rule, the scoring boundaries, the API, and the end-to-end scenarios in [Testing](#testing)
+- A SQLite backed incident store with a full audit trail
+- Simulation only response actions, so no real containment is ever possible from this code path
+- 38 automated tests (pytest) covering every rule, the scoring boundaries, the API, and the end to end scenarios described under [Testing](#testing)
 
-**Documented but not provisioned:** the Activepieces flow itself. Building
-it live requires your own Activepieces workspace, a Telegram bot token,
-and a reachable backend URL — see
-[`activepieces/workflow-documentation/sentinel-flow.md`](activepieces/workflow-documentation/sentinel-flow.md)
-for exact piece/action names (verified against the live Activepieces
-catalog) and setup steps.
+**Documented but not provisioned:** the Activepieces flow itself. Building it live needs your own Activepieces workspace, a Telegram bot token, and a reachable backend URL. See [`activepieces/workflow-documentation/sentinel-flow.md`](activepieces/workflow-documentation/sentinel-flow.md) for the exact piece and action names (verified against the live Activepieces catalog) and the setup steps.
 
 ## Architecture
 
@@ -64,25 +45,20 @@ Activepieces: Catch Webhook ──HTTP──▶ FastAPI /events
                       audit trail (SQLite)
 ```
 
-Activepieces owns orchestration and the human-in-the-loop gate. The
-Python app owns validation, detection, enrichment, scoring, and the
-system of record. See
-[`activepieces/workflow-documentation/sentinel-flow.md`](activepieces/workflow-documentation/sentinel-flow.md)
-for the flow in full detail.
+Activepieces handles orchestration and the human in the loop gate. The Python app handles validation, detection, enrichment, scoring, and the system of record. See [`activepieces/workflow-documentation/sentinel-flow.md`](activepieces/workflow-documentation/sentinel-flow.md) for the full flow.
 
 ## Technology stack
 
-- **FastAPI** + **Pydantic** — event ingestion and validation
-- **SQLite** (stdlib `sqlite3`) — event history, threat-intel cache, incidents, audit trail
-- **httpx** — AbuseIPDB and VirusTotal API clients
-- **slowapi** — rate limiting
-- **Activepieces** — webhook ingress, branching, Telegram notifications/approval
-- **pytest** + **respx** — automated tests, including mocked threat-intel responses
+- **FastAPI** and **Pydantic** for event ingestion and validation
+- **SQLite** (the standard library's `sqlite3`) for event history, the threat intel cache, incidents, and the audit trail
+- **httpx** for the AbuseIPDB and VirusTotal API clients
+- **slowapi** for rate limiting
+- **Activepieces** for webhook ingress, branching, and Telegram notifications and approvals
+- **pytest** and **respx** for automated tests, including mocked threat intel responses
 
 ## Installation
 
-Requires Python 3.11+ (developed and tested on 3.13 — avoid very new
-interpreter releases until third-party wheels catch up).
+You'll need Python 3.11 or newer. It was developed and tested on 3.13; I'd avoid very new interpreter releases until third party wheels catch up.
 
 ```bash
 python -m venv .venv
@@ -107,81 +83,53 @@ See [`.env.example`](.env.example) for every variable. The essentials:
 |---|---|
 | `SENTINEL_API_KEY` | Required in the `X-API-Key` header on every request |
 | `SENTINEL_DB_PATH` | SQLite file path (created automatically) |
-| `ABUSEIPDB_API_KEY` | Optional — without it, IP-reputation checks are skipped (not failed) |
-| `VIRUSTOTAL_API_KEY` | Optional — without it, domain checks are skipped |
+| `ABUSEIPDB_API_KEY` | Optional. Without it, IP reputation checks are skipped, not failed |
+| `VIRUSTOTAL_API_KEY` | Optional. Without it, domain checks are skipped |
 | `SENTINEL_CORRELATION_WINDOW_MINUTES` | How far back detection rules look for related events (default 15) |
 | `SENTINEL_FAILED_LOGIN_THRESHOLD` | Failures before `repeated_failed_logins` fires (default 5) |
 | `SENTINEL_SPRAY_DISTINCT_ACCOUNTS_THRESHOLD` | Distinct accounts from one IP before `password_spray` fires (default 4) |
 | `SENTINEL_ABUSEIPDB_SCORE_THRESHOLD` | AbuseIPDB confidence score before `malicious_ip_reputation` fires (default 50) |
 
-No secret is ever logged; API keys are read only from the environment
-(see `app/config.py`) and are never written to the SQLite database.
+No secret is ever logged. API keys are read only from the environment (see `app/config.py`) and are never written to the SQLite database.
 
 ## API documentation
 
 ### `POST /events`
-Headers: `X-API-Key: <key>`. Body: an authentication event (see
-`app/models/schemas.py:AuthEvent` or `sample_events/`). Unknown fields are
-rejected (`extra="forbid"`), as is any field with the wrong type or a
-malformed IP — all return `422`. Re-submitting the same `event_id`
-returns `409`.
+Headers: `X-API-Key: <key>`. Body: an authentication event (see `app/models/schemas.py:AuthEvent` or `sample_events/`). Unknown fields are rejected (`extra="forbid"`), and so is any field with the wrong type or a malformed IP; all of those return `422`. Re-submitting the same `event_id` returns `409`.
 
-Response: `{event_id, incident_id, findings[], intel[], risk_score, risk_band}`.
-`incident_id` is `null` unless the band is `HIGH` or `CRITICAL`.
+Response: `{event_id, incident_id, findings[], intel[], risk_score, risk_band}`. `incident_id` is `null` unless the band is `HIGH` or `CRITICAL`.
 
 ### `GET /incidents/{incident_id}`
-Returns the stored incident: the original event, findings, threat-intel
-results, score/band, and (once decided) who decided, what was approved,
-and the simulated outcome. `404` if the incident doesn't exist or was
-never created (because its band was LOW/MEDIUM).
+Returns the stored incident: the original event, findings, threat intel results, score and band, and, once it's been decided, who decided it, what was approved, and the simulated outcome. Returns `404` if the incident doesn't exist or was never created because its band was LOW or MEDIUM.
 
 ### `POST /incidents/{incident_id}/decision`
-Body: `{approved: bool, decided_by: str, response_action: str, notes?: str}`.
-`response_action` is one of `revoke_sessions`, `disable_account`,
-`block_ip`, `request_password_reset` — see
-[Security limitations](#security-limitations) for why none of these do
-anything real. Returns the simulated outcome and records it to the audit
-trail.
+Body: `{approved: bool, decided_by: str, response_action: str, notes?: str}`. `response_action` is one of `revoke_sessions`, `disable_account`, `block_ip`, or `request_password_reset`. See [Security limitations](#security-limitations) for why none of these actually do anything real. The endpoint returns the simulated outcome and records it to the audit trail.
 
 ## Detection methodology
 
-Six deterministic rules, implemented in `app/detection/rules.py`, each
-with its own documented blind spots (read the docstrings — they're not
-boilerplate):
+There are six deterministic rules, implemented in `app/detection/rules.py`, each with its own documented blind spots. The docstrings are worth reading; they're not boilerplate.
 
-1. **`repeated_failed_logins`** — ≥ N failed attempts for one account within the correlation window.
-2. **`password_spray`** — ≥ N distinct accounts receiving failed attempts from one IP within the window.
-3. **`success_after_failures`** — a success preceded by ≥ 3 failures for the same account. Deliberately the noisiest rule: it's also the signature of a user who simply mistyped their password.
-4. **`malicious_ip_reputation`** — AbuseIPDB confidence score above a threshold.
-5. **`geographic_anomaly`** — a login from a location different from the last *known* (non-"Unknown") location for that account. Only runs when such history exists — not true impossible-travel physics, just a label comparison.
-6. **`privileged_account_anomaly`** — any of the above, or any failed attempt, on an account whose role matches a fixed privileged-role list.
+1. **`repeated_failed_logins`**: fires when one account gets at least N failed attempts within the correlation window.
+2. **`password_spray`**: fires when at least N distinct accounts receive failed attempts from one IP within the window.
+3. **`success_after_failures`**: fires on a success preceded by at least 3 failures for the same account. This is deliberately the noisiest rule, since it's also exactly what a user mistyping their own password looks like.
+4. **`malicious_ip_reputation`**: fires when the AbuseIPDB confidence score is above a threshold.
+5. **`geographic_anomaly`**: fires on a login from a location different from the last known (non "Unknown") location for that account. It only runs when that history actually exists, and it's a label comparison rather than true impossible travel physics.
+6. **`privileged_account_anomaly`**: fires on any of the above, or any failed attempt, for an account whose role matches a fixed list of privileged roles.
 
-Rules run against a correlation window queried from SQLite
-(`app/detection/engine.py`), not against the single incoming event in
-isolation, which is what lets 1 and 2 distinguish a burst from a trickle.
+Rules run against a correlation window queried from SQLite (`app/detection/engine.py`) rather than against the single incoming event in isolation, which is what lets rules 1 and 2 tell a burst apart from a trickle.
 
-## Risk-scoring methodology
+## Risk scoring methodology
 
-`app/risk/scoring.py`: each distinct finding contributes its
-`severity_weight`; findings are deduplicated by rule name first (highest
-weight wins) specifically so the same signal can't be counted twice; the
-total is capped at 100.
+In `app/risk/scoring.py`, each distinct finding contributes its `severity_weight`. Findings are deduplicated by rule name first, with the highest weight winning, specifically so the same signal can't get counted twice. The total is capped at 100.
 
 | Score | Band |
 |---|---|
-| 0–29 | LOW |
-| 30–59 | MEDIUM |
-| 60–79 | HIGH |
-| 80–100 | CRITICAL |
+| 0 to 29 | LOW |
+| 30 to 59 | MEDIUM |
+| 60 to 79 | HIGH |
+| 80 to 100 | CRITICAL |
 
-Only `HIGH`/`CRITICAL` events become a persisted incident and go through
-the Activepieces approval gate — see `app/incidents/store.py:INCIDENT_BANDS`.
-Each finding also carries a MITRE ATT&CK technique ID; several rules map
-to the same technique (`T1078`, Valid Accounts) because the signal itself
-(bad IP reputation, geographic anomaly) indicates likely use of
-already-compromised credentials rather than a distinct technique of its
-own — that mapping is a judgment call, documented in the relevant rule's
-docstring.
+Only `HIGH` or `CRITICAL` events become a persisted incident and go through the Activepieces approval gate; see `app/incidents/store.py:INCIDENT_BANDS`. Each finding also carries a MITRE ATT&CK technique ID. A few rules map to the same technique (`T1078`, Valid Accounts) because the underlying signal, whether that's a bad IP reputation or a geographic anomaly, points to likely use of already compromised credentials rather than a distinct technique of its own. That mapping is a judgment call, and it's documented in the relevant rule's docstring.
 
 ## Activepieces setup
 
@@ -193,12 +141,12 @@ See [`activepieces/workflow-documentation/sentinel-flow.md`](activepieces/workfl
 pytest -q
 ```
 
-38 tests across:
-- `tests/test_detection_rules.py` — each rule in isolation, fire and no-fire cases
-- `tests/test_risk_scoring.py` — dedup and band boundaries
-- `tests/test_events_endpoint.py` — auth, validation, duplicates, the full pipeline
-- `tests/test_decision_endpoint.py` — approval and disapproval paths
-- `tests/test_scenarios.py` — the §9 scenario list, including a mocked AbuseIPDB response and a mocked AbuseIPDB *outage* to prove ingestion degrades gracefully instead of failing
+There are 38 tests across:
+- `tests/test_detection_rules.py`: each rule tested in isolation, both fire and no fire cases
+- `tests/test_risk_scoring.py`: deduplication and the band boundaries
+- `tests/test_events_endpoint.py`: auth, validation, duplicates, and the full pipeline
+- `tests/test_decision_endpoint.py`: the approval and disapproval paths
+- `tests/test_scenarios.py`: the full scenario list from the project brief, including a mocked AbuseIPDB response and a mocked AbuseIPDB outage, to prove ingestion degrades gracefully instead of failing
 
 ## Example incident report
 
@@ -223,35 +171,18 @@ pytest -q
 
 ## Security limitations
 
-- **Response actions are 100% simulated.** `app/incidents/response.py`
-  never calls a real identity provider, firewall, or session store — by
-  construction, not by configuration flag, so there is no "production
-  mode" switch that would make this dangerous.
-- **Detection rules are heuristic, not ground truth.** Several are
-  explicitly documented as noisy (`success_after_failures` especially);
-  this is a detection *engine*, not a verdict machine — the risk score and
-  human approval exist to absorb that ambiguity.
-- **Threat-intel enrichment degrades silently on failure.** A down or
-  rate-limited AbuseIPDB/VirusTotal is treated as "unknown", not
-  "malicious" or "clean" — ingestion never blocks on a third-party outage,
-  but that also means a real outage could mask a real signal.
-- **Geographic anomaly detection is a label comparison**, not a
-  distance/time-feasibility ("impossible travel") calculation.
-- **The privileged-role list is static** (`admin`, `root`, `superuser`, …)
-  and will not recognize a custom role name from a provider that doesn't
-  use one of those.
-- **Correlation is per-window, not cumulative.** A slow attack spread
-  across many windows longer than `SENTINEL_CORRELATION_WINDOW_MINUTES`
-  will not accumulate into a higher score.
-- **No authentication-provider integration.** Events are accepted exactly
-  as POSTed; this project does not include a connector to any real IdP,
-  by design (§3 of the brief — avoid introducing technologies without a
-  clear purpose).
+- **Response actions are entirely simulated.** `app/incidents/response.py` never calls a real identity provider, firewall, or session store. That's true by construction, not by a configuration flag, so there's no "production mode" switch that would make this dangerous.
+- **Detection rules are heuristic, not ground truth.** A few are explicitly documented as noisy, especially `success_after_failures`. This is a detection engine, not a verdict machine; the risk score and the human approval step exist to absorb that ambiguity.
+- **Threat intel enrichment degrades silently on failure.** A down or rate limited AbuseIPDB or VirusTotal call is treated as unknown, not as malicious or clean. Ingestion never blocks on a third party outage, but that also means a real outage could mask a real signal.
+- **Geographic anomaly detection is just a label comparison**, not an actual distance and time feasibility calculation for impossible travel.
+- **The privileged role list is static** (`admin`, `root`, `superuser`, and a few others), so it won't recognize a custom role name from a provider that doesn't use one of those.
+- **Correlation happens per window, not cumulatively.** A slow attack spread across more time than `SENTINEL_CORRELATION_WINDOW_MINUTES` won't accumulate into a higher score.
+- **There's no authentication provider integration.** Events are accepted exactly as they're posted. This project intentionally doesn't include a connector to any real identity provider, per the project brief's instruction to avoid introducing technologies without a clear purpose.
 
 ## Future improvements
 
-- Adaptive/baseline thresholds per account instead of static global ones
-- A real impossible-travel calculation using IP geolocation + haversine distance/time feasibility
-- An allowlist for known shared-egress IPs to reduce spray/geo false positives
-- Webhook signature verification example wired into `sample_events/` replay tooling
+- Adaptive, per account baseline thresholds instead of static global ones
+- A real impossible travel calculation using IP geolocation plus a haversine distance and time feasibility check
+- An allowlist for known shared egress IPs to cut down on spray and geo false positives
+- A webhook signature verification example wired into the `sample_events/` replay tooling
 - A second notification channel (email) alongside Telegram, using Activepieces' existing email pieces
