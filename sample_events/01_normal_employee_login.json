@@ -1,0 +1,11 @@
+{
+  "event_id": "EVT-DEMO-001",
+  "username": "jane.doe@company.com",
+  "source_ip": "203.0.113.11",
+  "timestamp": "2026-10-30T09:00:00Z",
+  "status": "success",
+  "authentication_method": "password",
+  "user_role": "employee",
+  "location": "Unknown",
+  "source": "identity_provider"
+}

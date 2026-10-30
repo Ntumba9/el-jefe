@@ -1,0 +1,11 @@
+{
+  "event_id": "EVT-DEMO-050",
+  "username": "admin.ops@company.com",
+  "source_ip": "203.0.113.60",
+  "timestamp": "2026-10-30T14:00:00Z",
+  "status": "failed",
+  "authentication_method": "password",
+  "user_role": "admin",
+  "location": "Unknown",
+  "source": "identity_provider"
+}

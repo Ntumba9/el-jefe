@@ -1,0 +1,11 @@
+{
+  "event_id": "EVT-DEMO-040",
+  "username": "sara.lee@company.com",
+  "source_ip": "198.51.100.200",
+  "timestamp": "2026-10-30T13:00:00Z",
+  "status": "failed",
+  "authentication_method": "password",
+  "user_role": "employee",
+  "location": "Unknown",
+  "source": "identity_provider"
+}
