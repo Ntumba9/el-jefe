@@ -11,9 +11,9 @@ API_KEY = "test-api-key"
 @pytest.fixture
 def make_client(tmp_path, monkeypatch):
     def _make(**extra_env):
-        db_path = tmp_path / f"sentinel-{uuid.uuid4().hex}.db"
-        monkeypatch.setenv("SENTINEL_API_KEY", API_KEY)
-        monkeypatch.setenv("SENTINEL_DB_PATH", str(db_path))
+        db_path = tmp_path / f"eljefe-{uuid.uuid4().hex}.db"
+        monkeypatch.setenv("ELJEFE_API_KEY", API_KEY)
+        monkeypatch.setenv("ELJEFE_DB_PATH", str(db_path))
         monkeypatch.setenv("ABUSEIPDB_API_KEY", "")
         monkeypatch.setenv("VIRUSTOTAL_API_KEY", "")
         for key, value in extra_env.items():

@@ -24,7 +24,7 @@ Replay a sequence file with curl:
 for row in $(jq -c '.[]' sample_events/02_repeated_failed_logins.json); do
   curl -s -X POST http://localhost:8000/events \
     -H "Content-Type: application/json" \
-    -H "X-API-Key: $SENTINEL_API_KEY" \
+    -H "X-API-Key: $ELJEFE_API_KEY" \
     -d "$row"
   echo
 done

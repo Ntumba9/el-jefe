@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="SENTINEL",
+    title="EL JEFE",
     description="Automated identity threat detection and response",
     lifespan=lifespan,
 )

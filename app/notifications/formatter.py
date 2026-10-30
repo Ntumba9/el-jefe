@@ -17,7 +17,7 @@ def format_incident_summary(
     intel: list[IntelResult],
 ) -> str:
     lines = [
-        f"SENTINEL ALERT — {risk_band.value} ({risk_score}/100)",
+        f"EL JEFE ALERT — {risk_band.value} ({risk_score}/100)",
         f"Incident: {incident_id}",
         f"Account: {username}  |  Source IP: {source_ip}",
         "",

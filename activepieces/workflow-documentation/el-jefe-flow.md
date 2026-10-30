@@ -1,4 +1,4 @@
-# SENTINEL Activepieces Flow
+# EL JEFE Activepieces Flow
 
 This flow is the orchestration layer described in the project README. It
 does not implement any detection or scoring logic itself — it forwards
@@ -13,11 +13,11 @@ piece catalog (not assumed) before being written down here.
 | # | Piece | Action / Trigger | Configuration |
 |---|---|---|---|
 | Trigger | `@activepieces/piece-webhook` | `catch_webhook` | Authentication: HMAC signature over the raw body, using a shared secret you set in Activepieces and in your identity provider / event source. Rejects unsigned or badly-signed requests before the flow runs. |
-| Step 1 | `@activepieces/piece-http` | `send_request` | `POST {{SENTINEL_BASE_URL}}/events`, header `X-API-Key: {{SENTINEL_API_KEY}}`, body = `{{trigger['output'].body}}` (pass the webhook payload straight through) |
+| Step 1 | `@activepieces/piece-http` | `send_request` | `POST {{ELJEFE_BASE_URL}}/events`, header `X-API-Key: {{ELJEFE_API_KEY}}`, body = `{{trigger['output'].body}}` (pass the webhook payload straight through) |
 | Step 2 | Router (core branching) | — | Branch on `{{step_1['output'].body.risk_band}}`: route A = `LOW` or `MEDIUM`, route B = `HIGH` or `CRITICAL` |
 | Step 3A | `@activepieces/piece-telegram-bot` | `send_text_message` | chat_id = your SOC notification chat; text = a short FYI built from `{{step_1['output'].body.risk_score}}` and `{{step_1['output'].body.findings}}` |
 | Step 3B | `@activepieces/piece-telegram-bot` | `request_approval_message` | chat_id = your on-call admin chat; message text includes `{{step_1['output'].body.incident_id}}`, the risk score/band, and the finding descriptions. This action itself pauses the flow until Approve/Disapprove is clicked — no separate Delay or Approval piece is needed. |
-| Step 4 | `@activepieces/piece-http` | `send_request` | `POST {{SENTINEL_BASE_URL}}/incidents/{{step_1['output'].body.incident_id}}/decision`, header `X-API-Key: {{SENTINEL_API_KEY}}`, body: `{"approved": {{step_3b['output'].approved}}, "decided_by": "{{step_3b['output'].respondedBy}}", "response_action": "disable_account"}` (pick the response action appropriate to the finding, or expose it as a Telegram poll if you want the admin to choose it — see "Extending" below) |
+| Step 4 | `@activepieces/piece-http` | `send_request` | `POST {{ELJEFE_BASE_URL}}/incidents/{{step_1['output'].body.incident_id}}/decision`, header `X-API-Key: {{ELJEFE_API_KEY}}`, body: `{"approved": {{step_3b['output'].approved}}, "decided_by": "{{step_3b['output'].respondedBy}}", "response_action": "disable_account"}` (pick the response action appropriate to the finding, or expose it as a Telegram poll if you want the admin to choose it — see "Extending" below) |
 
 Route A (LOW/MEDIUM) ends at step 3A: no incident was created by the
 backend for those bands (see `app/incidents/store.py`), so there is
@@ -44,8 +44,8 @@ nothing to decide on.
    token from `@BotFather`, and note the chat ID(s) you want notifications
    and approvals sent to.
 2. Create the flow with the steps above, in order.
-3. Set `SENTINEL_BASE_URL` (e.g. `http://localhost:8000` for local testing,
-   or your deployed URL) and `SENTINEL_API_KEY` (matching your `.env`) as
+3. Set `ELJEFE_BASE_URL` (e.g. `http://localhost:8000` for local testing,
+   or your deployed URL) and `ELJEFE_API_KEY` (matching your `.env`) as
    flow-level or connection variables.
 4. Point your event source (or `sample_events/`, replayed via curl) at the
    webhook trigger's URL instead of directly at `/events`, so the full

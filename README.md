@@ -1,10 +1,10 @@
-# SENTINEL
+# EL JEFE
 
-SENTINEL is an automated identity threat detection and response system. A FastAPI backend handles detection and risk scoring, and an Activepieces flow orchestrates notifications and a human approval gate on top of it. I built it as a cybersecurity engineering portfolio project.
+EL JEFE is an automated identity threat detection and response system. A FastAPI backend handles detection and risk scoring, and an Activepieces flow orchestrates notifications and a human approval gate on top of it. I built it as a cybersecurity engineering portfolio project.
 
 ## The problem
 
-Identity based attacks like credential compromise, brute force, password spraying, account takeover, and privileged account abuse all show up as a stream of authentication events that security teams mostly have to triage by hand. Someone pulls the IP's reputation, checks whether the account is privileged, and has to decide whether this is just the fifth mistyped password of the day or an actual intrusion, then decides what to do about it. Heading into 2026, credential based attacks are still the dominant way attackers get initial access, and identity providers log far more authentication events than any analyst could read individually. The bottleneck isn't a lack of detection signal, it's triage and making consistent, auditable decisions quickly. SENTINEL automates the enrichment and scoring step and keeps a human in the loop for the decision that actually matters: whether to act.
+Identity based attacks like credential compromise, brute force, password spraying, account takeover, and privileged account abuse all show up as a stream of authentication events that security teams mostly have to triage by hand. Someone pulls the IP's reputation, checks whether the account is privileged, and has to decide whether this is just the fifth mistyped password of the day or an actual intrusion, then decides what to do about it. Heading into 2026, credential based attacks are still the dominant way attackers get initial access, and identity providers log far more authentication events than any analyst could read individually. The bottleneck isn't a lack of detection signal, it's triage and making consistent, auditable decisions quickly. EL JEFE automates the enrichment and scoring step and keeps a human in the loop for the decision that actually matters: whether to act.
 
 ## What's implemented vs. planned
 
@@ -17,7 +17,7 @@ Identity based attacks like credential compromise, brute force, password sprayin
 - Simulation only response actions, so no real containment is ever possible from this code path
 - 38 automated tests (pytest) covering every rule, the scoring boundaries, the API, and the end to end scenarios described under [Testing](#testing)
 
-**Documented but not provisioned:** the Activepieces flow itself. Building it live needs your own Activepieces workspace, a Telegram bot token, and a reachable backend URL. See [`activepieces/workflow-documentation/sentinel-flow.md`](activepieces/workflow-documentation/sentinel-flow.md) for the exact piece and action names (verified against the live Activepieces catalog) and the setup steps.
+**Documented but not provisioned:** the Activepieces flow itself. Building it live needs your own Activepieces workspace, a Telegram bot token, and a reachable backend URL. See [`activepieces/workflow-documentation/el-jefe-flow.md`](activepieces/workflow-documentation/el-jefe-flow.md) for the exact piece and action names (verified against the live Activepieces catalog) and the setup steps.
 
 ## Architecture
 
@@ -45,7 +45,7 @@ Activepieces: Catch Webhook ──HTTP──▶ FastAPI /events
                       audit trail (SQLite)
 ```
 
-Activepieces handles orchestration and the human in the loop gate. The Python app handles validation, detection, enrichment, scoring, and the system of record. See [`activepieces/workflow-documentation/sentinel-flow.md`](activepieces/workflow-documentation/sentinel-flow.md) for the full flow.
+Activepieces handles orchestration and the human in the loop gate. The Python app handles validation, detection, enrichment, scoring, and the system of record. See [`activepieces/workflow-documentation/el-jefe-flow.md`](activepieces/workflow-documentation/el-jefe-flow.md) for the full flow.
 
 ## Technology stack
 
@@ -81,14 +81,14 @@ See [`.env.example`](.env.example) for every variable. The essentials:
 
 | Variable | Purpose |
 |---|---|
-| `SENTINEL_API_KEY` | Required in the `X-API-Key` header on every request |
-| `SENTINEL_DB_PATH` | SQLite file path (created automatically) |
+| `ELJEFE_API_KEY` | Required in the `X-API-Key` header on every request |
+| `ELJEFE_DB_PATH` | SQLite file path (created automatically) |
 | `ABUSEIPDB_API_KEY` | Optional. Without it, IP reputation checks are skipped, not failed |
 | `VIRUSTOTAL_API_KEY` | Optional. Without it, domain checks are skipped |
-| `SENTINEL_CORRELATION_WINDOW_MINUTES` | How far back detection rules look for related events (default 15) |
-| `SENTINEL_FAILED_LOGIN_THRESHOLD` | Failures before `repeated_failed_logins` fires (default 5) |
-| `SENTINEL_SPRAY_DISTINCT_ACCOUNTS_THRESHOLD` | Distinct accounts from one IP before `password_spray` fires (default 4) |
-| `SENTINEL_ABUSEIPDB_SCORE_THRESHOLD` | AbuseIPDB confidence score before `malicious_ip_reputation` fires (default 50) |
+| `ELJEFE_CORRELATION_WINDOW_MINUTES` | How far back detection rules look for related events (default 15) |
+| `ELJEFE_FAILED_LOGIN_THRESHOLD` | Failures before `repeated_failed_logins` fires (default 5) |
+| `ELJEFE_SPRAY_DISTINCT_ACCOUNTS_THRESHOLD` | Distinct accounts from one IP before `password_spray` fires (default 4) |
+| `ELJEFE_ABUSEIPDB_SCORE_THRESHOLD` | AbuseIPDB confidence score before `malicious_ip_reputation` fires (default 50) |
 
 No secret is ever logged. API keys are read only from the environment (see `app/config.py`) and are never written to the SQLite database.
 
@@ -133,7 +133,7 @@ Only `HIGH` or `CRITICAL` events become a persisted incident and go through the 
 
 ## Activepieces setup
 
-See [`activepieces/workflow-documentation/sentinel-flow.md`](activepieces/workflow-documentation/sentinel-flow.md).
+See [`activepieces/workflow-documentation/el-jefe-flow.md`](activepieces/workflow-documentation/el-jefe-flow.md).
 
 ## Testing
 
@@ -176,7 +176,7 @@ There are 38 tests across:
 - **Threat intel enrichment degrades silently on failure.** A down or rate limited AbuseIPDB or VirusTotal call is treated as unknown, not as malicious or clean. Ingestion never blocks on a third party outage, but that also means a real outage could mask a real signal.
 - **Geographic anomaly detection is just a label comparison**, not an actual distance and time feasibility calculation for impossible travel.
 - **The privileged role list is static** (`admin`, `root`, `superuser`, and a few others), so it won't recognize a custom role name from a provider that doesn't use one of those.
-- **Correlation happens per window, not cumulatively.** A slow attack spread across more time than `SENTINEL_CORRELATION_WINDOW_MINUTES` won't accumulate into a higher score.
+- **Correlation happens per window, not cumulatively.** A slow attack spread across more time than `ELJEFE_CORRELATION_WINDOW_MINUTES` won't accumulate into a higher score.
 - **There's no authentication provider integration.** Events are accepted exactly as they're posted. This project intentionally doesn't include a connector to any real identity provider, per the project brief's instruction to avoid introducing technologies without a clear purpose.
 
 ## Future improvements
