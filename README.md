@@ -184,7 +184,7 @@ docker build -t el-jefe .
 docker run --rm -p 8000:8000 --env-file .env -v el-jefe-data:/data el-jefe
 ```
 
-Multi-stage build (a builder stage compiles dependencies, the final image doesn't carry a compiler), runs as a dedicated non-root user, and writes its SQLite file to `/data`, which should be a mounted volume so it survives a container restart.
+Single-stage build, deliberately (see the Dockerfile's own comment for why a multi-stage split actually caused a real, Trivy-caught vulnerability during development). Runs as a dedicated non-root user and writes its SQLite file to `/data`, which should be a mounted volume so it survives a container restart.
 
 ### Architecture decisions
 

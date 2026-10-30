@@ -1,19 +1,23 @@
-FROM python:3.13-slim AS base
+FROM python:3.13-slim
 
-# Build layer: compile wheels in a throwaway stage so the final image
-# doesn't carry a C compiler or build headers.
-FROM base AS builder
-WORKDIR /build
-COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
-
-FROM base
+# Single stage, deliberately: none of this project's dependencies need a
+# compiler to install (all have prebuilt wheels for this platform), so a
+# multi-stage copy-the-wheels split would add complexity for no benefit
+# — and it previously caused a real bug: copying a separate stage's
+# site-packages over this base image's own pre-installed setuptools left
+# the old version's dist-info metadata on disk alongside the new one,
+# which Trivy's container scan (correctly) flagged as a stale, vulnerable
+# version still present in the image. Installing directly into this one
+# environment lets pip manage the upgrade (and removal of the old
+# dist-info) properly.
 WORKDIR /app
 
-# Runs as a dedicated non-root user; no shell, no home directory beyond
-# what's needed. The app never needs root, so it never runs as root.
 RUN useradd --system --no-create-home --uid 10001 eljefe
-COPY --from=builder /install /usr/local
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
 COPY app/ ./app/
 
 ENV ELJEFE_DB_PATH=/data/eljefe.db \
