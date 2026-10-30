@@ -20,7 +20,7 @@ Identity based attacks like credential compromise, brute force, password sprayin
 - Structured JSON logging to stdout, no new dependency
 - A SQLite backed incident store with a full audit trail, running in WAL mode so reads don't block on writes
 - Simulation only response actions, so no real containment is ever possible from this code path
-- 60 automated tests (pytest, 99% coverage) covering every rule, the scoring boundaries, the API, retry/idempotency/correlation behavior, and the end to end scenarios described under [Testing](#testing)
+- 60 automated tests (pytest, 99% coverage) covering every rule, the scoring boundaries, the API, retry behavior, idempotency, correlation, and the end to end scenarios described under [Testing](#testing)
 - CI on every push/PR: tests with a coverage gate, a bandit SAST scan, a pip-audit dependency scan, and a gitleaks secret scan — see [CI/CD & security](#cicd--security)
 
 **Documented but not provisioned:** the Activepieces flow itself. Building it live needs your own Activepieces workspace, a Telegram bot token, and a reachable backend URL. See [`activepieces/workflow-documentation/el-jefe-flow.md`](activepieces/workflow-documentation/el-jefe-flow.md) for the exact piece and action names (verified against the live Activepieces catalog) and the setup steps.
