@@ -21,7 +21,8 @@ Identity based attacks like credential compromise, brute force, password sprayin
 - A SQLite backed incident store with a full audit trail, running in WAL mode so reads don't block on writes
 - Simulation only response actions, so no real containment is ever possible from this code path
 - 60 automated tests (pytest, 99% coverage) covering every rule, the scoring boundaries, the API, retry behavior, idempotency, correlation, and the end to end scenarios described under [Testing](#testing)
-- CI on every push/PR: tests with a coverage gate, a bandit SAST scan, a pip-audit dependency scan, and a gitleaks secret scan — see [CI/CD & security](#cicd--security)
+- CI on every push/PR: tests with a coverage gate, a bandit SAST scan, a pip-audit dependency scan, a gitleaks secret scan, a container build + Trivy image scan, and SBOM generation — see [CI/CD & security](#cicd--security)
+- A multi-stage, non-root [Dockerfile](Dockerfile), and [Architecture Decision Records](docs/adr/) for the choices that needed explaining
 
 **Documented but not provisioned:** the Activepieces flow itself. Building it live needs your own Activepieces workspace, a Telegram bot token, and a reachable backend URL. See [`activepieces/workflow-documentation/el-jefe-flow.md`](activepieces/workflow-documentation/el-jefe-flow.md) for the exact piece and action names (verified against the live Activepieces catalog) and the setup steps.
 
@@ -171,8 +172,23 @@ There are 60 tests, at 99% statement coverage, across:
 | `sast` | [bandit](https://bandit.readthedocs.io/) static analysis on `app/` | Yes, on medium/high severity |
 | `dependency-audit` | [pip-audit](https://pypi.org/project/pip-audit/) against `requirements.txt` (blocking) and `requirements-dev.txt` (informational only, since a dev-only tool's CVE doesn't ship to production) | Yes, for runtime deps |
 | `secret-scan` | [gitleaks](https://github.com/gitleaks/gitleaks) over full git history | Yes |
+| `docker` | Builds the `Dockerfile` image, then scans it with [Trivy](https://github.com/aquasecurity/trivy-action) | Yes, on HIGH/CRITICAL fixable findings |
+| `sbom` | Generates a CycloneDX SBOM of runtime dependencies, uploaded as a build artifact | No — informational, for supply-chain visibility |
 
-This isn't decoration: pip-audit caught two real transitive vulnerabilities (an outdated `starlette` pulled in by an older FastAPI pin, and an outdated `python-dotenv`) while building this, which is exactly what this job is for — see the commit that bumped those pins.
+This isn't decoration: pip-audit caught two real transitive vulnerabilities (an outdated `starlette` pulled in by an older FastAPI pin, and an outdated `python-dotenv`) while building this, which is exactly what this job is for — see the commit that bumped those pins. Gitleaks caught a false positive of its own on this README's prose on the very first run, which is also worth knowing about this tool: it needs the occasional false-positive fix, same as any other static analyzer.
+
+### Container image
+
+```bash
+docker build -t el-jefe .
+docker run --rm -p 8000:8000 --env-file .env -v el-jefe-data:/data el-jefe
+```
+
+Multi-stage build (a builder stage compiles dependencies, the final image doesn't carry a compiler), runs as a dedicated non-root user, and writes its SQLite file to `/data`, which should be a mounted volume so it survives a container restart.
+
+### Architecture decisions
+
+[`docs/adr/`](docs/adr/) records the reasoning behind the choices that aren't self-evident from the code alone — why SQLite and not Postgres, why two static API keys and not full RBAC, why response actions can't become real actions without a code change (not a config flag), why WAL mode, why Activepieces for orchestration. Several of these were explicitly scoped down from a broader ask during the project's own engineering assessment; the ADRs say why.
 
 ## Example incident report
 

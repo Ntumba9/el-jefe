@@ -77,3 +77,47 @@ jobs:
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker:
+    name: Container (build + Trivy scan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: el-jefe:ci
+
+      # HIGH/CRITICAL only: a from-scratch slim base always carries some
+      # low/medium noise unrelated to this app's own code, and gating on
+      # that would make the job fail for reasons nobody here can fix.
+      - uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: el-jefe:ci
+          severity: "HIGH,CRITICAL"
+          exit-code: "1"
+          ignore-unfixed: true
+
+  sbom:
+    name: Supply chain (SBOM)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - run: pip install cyclonedx-bom==4.6.1
+
+      - name: Generate CycloneDX SBOM from runtime dependencies
+        run: cyclonedx-py requirements requirements.txt -o sbom.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
