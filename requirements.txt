@@ -5,3 +5,13 @@ pydantic==2.9.2
 httpx==0.27.2
 python-dotenv==1.2.4
 slowapi==0.1.9
+
+# Transitive dependencies pinned above their resolved-but-vulnerable
+# versions. Not used directly by this app's code; pulled in by the
+# packages above (slowapi -> limits -> msgpack; base image -> setuptools;
+# httpx/uvicorn's resolution -> urllib3). Found by the CI 'docker' job's
+# Trivy scan, not by pip-audit — Trivy's container scan covers packages
+# pip-audit's dependency-file scan doesn't always catch the same way.
+msgpack==1.2.3
+setuptools==78.1.1
+urllib3==2.8.0
