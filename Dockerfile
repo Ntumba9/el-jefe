@@ -16,7 +16,9 @@ RUN useradd --system --no-create-home --uid 10001 eljefe
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt && \
+    echo "=== DIAGNOSTIC: locating stale package files ===" && \
+    find / -xdev -iname "*msgpack*" -o -iname "*urllib3*" -o -iname "*setuptools*" 2>/dev/null | grep -v "^/proc" || true
 
 COPY app/ ./app/
 
