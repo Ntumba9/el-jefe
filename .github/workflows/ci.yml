@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (pytest + coverage)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+          cache-dependency-path: requirements-dev.txt
+
+      - run: pip install -r requirements-dev.txt
+
+      - run: pytest -q --cov=app --cov-report=term-missing --cov-report=xml --cov-fail-under=95
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+  sast:
+    name: Security (bandit SAST)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - run: pip install bandit==1.7.9
+
+      # -ll: only fail on medium/high severity, to avoid noise from low-
+      # confidence heuristic findings blocking every PR.
+      - run: bandit -r app -ll -f txt
+
+  dependency-audit:
+    name: Security (dependency vulnerabilities)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - run: pip install pip-audit==2.7.3
+
+      - name: Audit runtime dependencies (blocking)
+        run: pip-audit -r requirements.txt
+
+      - name: Audit dev/test dependencies (informational)
+        run: pip-audit -r requirements-dev.txt || echo "::warning::vulnerability found in a dev-only dependency, see log above"
+
+  secret-scan:
+    name: Security (secret scanning)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

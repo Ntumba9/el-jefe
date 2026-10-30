@@ -1,5 +1,7 @@
 # EL JEFE
 
+[![CI](https://github.com/Ntumba9/el-jefe/actions/workflows/ci.yml/badge.svg)](https://github.com/Ntumba9/el-jefe/actions/workflows/ci.yml)
+
 EL JEFE is an automated identity threat detection and response system. A FastAPI backend handles detection and risk scoring, and an Activepieces flow orchestrates notifications and a human approval gate on top of it. I built it as a cybersecurity engineering portfolio project.
 
 ## The problem
@@ -18,7 +20,8 @@ Identity based attacks like credential compromise, brute force, password sprayin
 - Structured JSON logging to stdout, no new dependency
 - A SQLite backed incident store with a full audit trail, running in WAL mode so reads don't block on writes
 - Simulation only response actions, so no real containment is ever possible from this code path
-- 45 automated tests (pytest) covering every rule, the scoring boundaries, the API, retry/idempotency/correlation behavior, and the end to end scenarios described under [Testing](#testing)
+- 60 automated tests (pytest, 99% coverage) covering every rule, the scoring boundaries, the API, retry/idempotency/correlation behavior, and the end to end scenarios described under [Testing](#testing)
+- CI on every push/PR: tests with a coverage gate, a bandit SAST scan, a pip-audit dependency scan, and a gitleaks secret scan — see [CI/CD & security](#cicd--security)
 
 **Documented but not provisioned:** the Activepieces flow itself. Building it live needs your own Activepieces workspace, a Telegram bot token, and a reachable backend URL. See [`activepieces/workflow-documentation/el-jefe-flow.md`](activepieces/workflow-documentation/el-jefe-flow.md) for the exact piece and action names (verified against the live Activepieces catalog) and the setup steps.
 
@@ -145,16 +148,31 @@ See [`activepieces/workflow-documentation/el-jefe-flow.md`](activepieces/workflo
 ## Testing
 
 ```bash
-pytest -q
+pip install -r requirements-dev.txt
+pytest -q --cov=app --cov-report=term-missing
 ```
 
-There are 45 tests across:
+There are 60 tests, at 99% statement coverage, across:
 - `tests/test_detection_rules.py`: each rule tested in isolation, both fire and no fire cases
 - `tests/test_risk_scoring.py`: deduplication and the band boundaries
 - `tests/test_events_endpoint.py`: auth, validation, duplicates, and the full pipeline
 - `tests/test_decision_endpoint.py`: the approval and disapproval paths, and that the ingest key specifically cannot approve a decision
 - `tests/test_scenarios.py`: the full scenario list from the project brief, including a mocked AbuseIPDB response and a mocked AbuseIPDB outage, to prove ingestion degrades gracefully instead of failing
 - `tests/test_v2_hardening.py`: idempotency-key replay, cross-incident correlation counts, and AbuseIPDB retry-then-succeed / retry-then-degrade behavior
+- `tests/test_virustotal.py`, `tests/test_intel_cache.py`, `tests/test_notifications_formatter.py`, `tests/test_response_simulation.py`: the paths that aren't exercised just by hitting `/events` directly (VirusTotal success/429/error, cache TTL expiry, the Telegram-bound alert text, every simulated response action)
+
+## CI/CD & security
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push and PR to `main`, as four independent jobs:
+
+| Job | What it does | Gates the build? |
+|---|---|---|
+| `test` | pytest with coverage, fails under 95% | Yes |
+| `sast` | [bandit](https://bandit.readthedocs.io/) static analysis on `app/` | Yes, on medium/high severity |
+| `dependency-audit` | [pip-audit](https://pypi.org/project/pip-audit/) against `requirements.txt` (blocking) and `requirements-dev.txt` (informational only, since a dev-only tool's CVE doesn't ship to production) | Yes, for runtime deps |
+| `secret-scan` | [gitleaks](https://github.com/gitleaks/gitleaks) over full git history | Yes |
+
+This isn't decoration: pip-audit caught two real transitive vulnerabilities (an outdated `starlette` pulled in by an older FastAPI pin, and an outdated `python-dotenv`) while building this, which is exactly what this job is for — see the commit that bumped those pins.
 
 ## Example incident report
 
